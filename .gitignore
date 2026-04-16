@@ -1,7 +1,10 @@
 __pycache__/
 *.pyc
 dist/
+dist_win/
 build/
+build_win/
+*.zip
 temp/
 *.egg-info/
 .env
