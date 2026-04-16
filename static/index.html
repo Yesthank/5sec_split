@@ -399,6 +399,7 @@ h1 span{color:var(--accent)}
     <div class="modal-nav">
       <button class="modal-nav-btn" id="navBackBtn" onclick="navBack()" title="뒤로">&#9664;</button>
       <button class="modal-nav-btn" onclick="navUp()" title="상위 폴더">&#9650;</button>
+      <button class="modal-nav-btn" id="navDrivesBtn" onclick="showDrives()" title="드라이브" style="font-size:.75rem">💾</button>
       <div class="modal-path" id="modalPath"></div>
     </div>
     <div class="modal-body" id="modalBody"></div>
@@ -446,7 +447,9 @@ function escapeHtml(str) {
 
 $('browseBtn').addEventListener('click', () => {
   folderHistory = [];
-  currentBrowsePath = outputDirInput.value || '';
+  const val = outputDirInput.value.trim();
+  // 상대경로(./output 등)는 서버에서 찾을 수 없으므로 빈 값(=홈 디렉토리)으로 시작
+  currentBrowsePath = (val && !val.startsWith('.')) ? val : '';
   $('folderModal').classList.add('active');
   document.addEventListener('keydown', folderKeyHandler);
   loadFolder(currentBrowsePath);
@@ -525,12 +528,34 @@ function selectCurrentFolder() {
   closeFolderBrowser();
 }
 
+async function showDrives() {
+  const body = $('modalBody');
+  body.innerHTML = '<div class="modal-body-loading">드라이브 검색 중...</div>';
+  try {
+    const resp = await fetch('/api/drives');
+    const data = await resp.json();
+    if (data.drives.length === 0) {
+      body.innerHTML = '<div style="padding:20px;color:#6e7191;text-align:center">드라이브를 찾을 수 없습니다</div>';
+      return;
+    }
+    let html = '';
+    for (const d of data.drives) {
+      html += '<div class="folder-item" onclick="loadFolder(\'' + escapeHtml(d.path) + '\')"><span class="folder-item-icon">💾</span><span class="folder-item-name">' + escapeHtml(d.name) + '</span></div>';
+    }
+    body.innerHTML = html;
+    $('modalPath').textContent = '드라이브 선택';
+  } catch (err) {
+    body.innerHTML = '<div class="modal-body-error">드라이브 목록 로드 실패</div>';
+  }
+}
+
 // window-level functions for onclick attributes
 window.closeFolderBrowser = closeFolderBrowser;
 window.navBack = navBack;
 window.navUp = navUp;
 window.loadFolder = loadFolder;
 window.selectCurrentFolder = selectCurrentFolder;
+window.showDrives = showDrives;
 
 // --- 유틸 ---
 function formatDuration(sec) {

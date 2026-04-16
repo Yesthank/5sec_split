@@ -170,6 +170,20 @@ async def split(
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@app.get("/api/drives")
+async def list_drives():
+    """Windows 드라이브 목록을 반환한다."""
+    import platform
+    drives = []
+    if platform.system() == "Windows":
+        import string
+        for letter in string.ascii_uppercase:
+            dp = Path(f"{letter}:\\")
+            if dp.exists():
+                drives.append({"name": f"{letter}:\\", "path": f"{letter}:\\"})
+    return {"drives": drives}
+
+
 @app.post("/api/browse")
 async def browse_folder(path: str = Form("")):
     """폴더 내용을 반환한다 (폴더 선택용)."""
@@ -187,10 +201,14 @@ async def browse_folder(path: str = Form("")):
         for entry in sorted(p.iterdir()):
             if entry.name.startswith("."):
                 continue
+            try:
+                is_dir = entry.is_dir()
+            except (PermissionError, OSError):
+                continue
             items.append({
                 "name": entry.name,
                 "path": str(entry),
-                "is_dir": entry.is_dir(),
+                "is_dir": is_dir,
             })
     except PermissionError:
         raise HTTPException(403, "Permission denied")
