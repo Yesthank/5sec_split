@@ -170,6 +170,34 @@ async def split(
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+@app.post("/api/browse")
+async def browse_folder(path: str = Form("")):
+    """폴더 내용을 반환한다 (폴더 선택용)."""
+    from fastapi import HTTPException
+
+    if not path:
+        path = str(Path.home())
+
+    p = Path(path)
+    if not p.is_dir():
+        raise HTTPException(400, "Not a valid directory")
+
+    items = []
+    try:
+        for entry in sorted(p.iterdir()):
+            if entry.name.startswith("."):
+                continue
+            items.append({
+                "name": entry.name,
+                "path": str(entry),
+                "is_dir": entry.is_dir(),
+            })
+    except PermissionError:
+        raise HTTPException(403, "Permission denied")
+
+    return {"current": str(p), "parent": str(p.parent), "items": items}
+
+
 # 정적 파일 — 반드시 API 라우트 아래에 마운트
 app.mount("/", StaticFiles(directory=str(BASE_DIR / "static"), html=True), name="static")
 

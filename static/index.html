@@ -225,6 +225,95 @@ h1 span{color:var(--accent)}
   text-align:center;
 }
 .upload-progress.show{display:block}
+
+/* ─── Folder Picker ─── */
+.folder-picker{display:flex;gap:8px}
+.folder-picker input{flex:1}
+.browse-btn{
+  padding:10px 16px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:#1a1a2a;
+  color:var(--text2);
+  cursor:pointer;
+  font-size:.82rem;
+  white-space:nowrap;
+  transition:all .2s;
+}
+.browse-btn:hover{background:#252538;color:var(--text);border-color:var(--accent)}
+
+/* ─── Folder Browser Modal ─── */
+.modal-overlay{
+  display:none;position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,.7);
+  z-index:100;
+  justify-content:center;align-items:center;
+}
+.modal-overlay.active{display:flex}
+.modal{
+  background:var(--card);
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  width:520px;max-height:70vh;
+  display:flex;flex-direction:column;
+  overflow:hidden;
+}
+.modal-header{
+  padding:16px 20px;
+  border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;
+  flex-shrink:0;
+}
+.modal-header h3{font-size:1rem;font-weight:700}
+.modal-close{
+  background:none;border:none;color:var(--text2);
+  font-size:1.3rem;cursor:pointer;padding:4px 10px;border-radius:6px;
+}
+.modal-close:hover{color:var(--error)}
+.modal-nav{
+  display:flex;align-items:center;gap:6px;
+  padding:10px 20px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;background:#0e0e1a;
+}
+.modal-nav-btn{
+  background:#1a1a2a;border:1px solid var(--border);
+  border-radius:6px;color:var(--text2);cursor:pointer;
+  padding:4px 10px;font-size:.9rem;line-height:1;
+}
+.modal-nav-btn:hover{background:#252538;color:var(--text)}
+.modal-nav-btn:disabled{opacity:.3;cursor:not-allowed}
+.modal-path{
+  flex:1;font-size:.75rem;color:var(--text2);
+  word-break:break-all;min-width:0;
+  padding:4px 8px;background:var(--bg);
+  border-radius:4px;border:1px solid var(--border);
+  user-select:all;
+}
+.modal-body{overflow-y:auto;flex:1;min-height:200px;padding:4px 0}
+.modal-body-loading{
+  display:flex;align-items:center;justify-content:center;
+  padding:40px;color:var(--text2);font-size:.9rem;
+}
+.modal-body-error{
+  padding:20px;color:var(--error);font-size:.85rem;text-align:center;
+}
+.folder-item{
+  padding:10px 20px;cursor:pointer;font-size:.9rem;
+  display:flex;align-items:center;gap:8px;
+  user-select:none;transition:background .1s;
+}
+.folder-item:hover{background:#1a1a2a}
+.folder-item:active{background:#252538}
+.folder-item-icon{flex-shrink:0}
+.folder-item-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.modal-footer{
+  padding:12px 20px;border-top:1px solid var(--border);
+  display:flex;justify-content:flex-end;gap:8px;
+  flex-shrink:0;
+}
+.modal-footer .btn{width:auto;padding:10px 20px;font-size:.85rem}
 </style>
 </head>
 <body>
@@ -266,7 +355,10 @@ h1 span{color:var(--accent)}
       </div>
       <div class="field">
         <label>저장 폴더 경로</label>
-        <input type="text" id="outputDir" placeholder="예: /home/user/output">
+        <div class="folder-picker">
+          <input type="text" id="outputDir" placeholder="예: C:\Users\user\output">
+          <button type="button" class="browse-btn" id="browseBtn">Browse...</button>
+        </div>
         <div class="hint">폴더가 없으면 자동 생성됩니다</div>
       </div>
       <button class="btn btn-primary" id="splitBtn">
@@ -297,6 +389,26 @@ h1 span{color:var(--accent)}
   </div>
 </div>
 
+<!-- Folder Browser Modal -->
+<div class="modal-overlay" id="folderModal" onclick="if(event.target===this)closeFolderBrowser()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>폴더 선택</h3>
+      <button class="modal-close" onclick="closeFolderBrowser()">&times;</button>
+    </div>
+    <div class="modal-nav">
+      <button class="modal-nav-btn" id="navBackBtn" onclick="navBack()" title="뒤로">&#9664;</button>
+      <button class="modal-nav-btn" onclick="navUp()" title="상위 폴더">&#9650;</button>
+      <div class="modal-path" id="modalPath"></div>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeFolderBrowser()">취소</button>
+      <button class="btn btn-primary" onclick="selectCurrentFolder()">이 폴더 선택</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 
@@ -320,6 +432,105 @@ let currentFileId = null;
 
 // --- 기본 저장 경로 ---
 outputDirInput.value = './output';
+
+// --- 폴더 브라우저 ---
+let folderHistory = [];
+let folderLoading = false;
+let folderParent = '';
+let currentBrowsePath = '';
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/\\/g, '\\\\');
+}
+
+$('browseBtn').addEventListener('click', () => {
+  folderHistory = [];
+  currentBrowsePath = outputDirInput.value || '';
+  $('folderModal').classList.add('active');
+  document.addEventListener('keydown', folderKeyHandler);
+  loadFolder(currentBrowsePath);
+});
+
+function closeFolderBrowser() {
+  $('folderModal').classList.remove('active');
+  document.removeEventListener('keydown', folderKeyHandler);
+}
+
+function folderKeyHandler(e) {
+  if (e.key === 'Escape') closeFolderBrowser();
+  if (e.key === 'Backspace' && !e.target.matches('input')) { e.preventDefault(); navUp(); }
+}
+
+function navBack() {
+  if (folderHistory.length > 0) {
+    const prev = folderHistory.pop();
+    loadFolder(prev, true);
+  }
+}
+
+function navUp() {
+  if (folderParent && folderParent !== currentBrowsePath) {
+    loadFolder(folderParent);
+  }
+}
+
+async function loadFolder(path, skipHistory) {
+  if (folderLoading) return;
+  folderLoading = true;
+
+  const body = $('modalBody');
+  const backBtn = $('navBackBtn');
+  body.innerHTML = '<div class="modal-body-loading">불러오는 중...</div>';
+
+  if (!skipHistory && currentBrowsePath) {
+    folderHistory.push(currentBrowsePath);
+  }
+  backBtn.disabled = folderHistory.length === 0;
+
+  const formData = new FormData();
+  formData.append('path', path);
+  try {
+    const resp = await fetch('/api/browse', { method: 'POST', body: formData });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: 'Request failed' }));
+      body.innerHTML = '<div class="modal-body-error">' + escapeHtml(err.detail || '폴더를 열 수 없습니다') + '<br><br><button class="btn btn-secondary" onclick="navBack()" style="width:auto;padding:8px 16px;font-size:.82rem">뒤로</button></div>';
+      folderLoading = false;
+      return;
+    }
+    const data = await resp.json();
+    currentBrowsePath = data.current;
+    folderParent = data.parent;
+    $('modalPath').textContent = data.current;
+
+    let html = '';
+    const dirs = data.items.filter(i => i.is_dir);
+    if (dirs.length === 0) {
+      html = '<div style="padding:20px;color:#6e7191;text-align:center">하위 폴더 없음</div>';
+    }
+    for (const item of dirs) {
+      html += '<div class="folder-item" onclick="loadFolder(\'' + escapeHtml(item.path) + '\')"><span class="folder-item-icon">\uD83D\uDCC1</span><span class="folder-item-name">' + escapeHtml(item.name) + '</span></div>';
+    }
+    body.innerHTML = html;
+    body.scrollTop = 0;
+  } catch (err) {
+    body.innerHTML = '<div class="modal-body-error">연결 오류<br><small>' + escapeHtml(err.message) + '</small></div>';
+  } finally {
+    folderLoading = false;
+  }
+}
+
+function selectCurrentFolder() {
+  outputDirInput.value = currentBrowsePath;
+  closeFolderBrowser();
+}
+
+// window-level functions for onclick attributes
+window.closeFolderBrowser = closeFolderBrowser;
+window.navBack = navBack;
+window.navUp = navUp;
+window.loadFolder = loadFolder;
+window.selectCurrentFolder = selectCurrentFolder;
 
 // --- 유틸 ---
 function formatDuration(sec) {
